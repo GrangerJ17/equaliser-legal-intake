@@ -2,8 +2,13 @@ from .chat_analysis import ConversationAnalyser
 from .memory_manager import MemoryManager
 from .response_generator import ResponseGenerator
 from .rag_handler import RAGHandler
-from .schemas import FieldCompletenessTracker
+from .schemas import FieldCompletenessTracker, CaseFactsSchema
 from transformers import pipeline
+
+import logging
+
+logger = logging.getLogger(__name__)
+
 
 class ChatOrchestrator:
     """Main orchestrator - coordinates components"""
@@ -14,9 +19,12 @@ class ChatOrchestrator:
         self.memory = MemoryManager(llm)
         self.rag = RAGHandler(embedder)
         self.responder = ResponseGenerator(llm, system_prompt, self.rag)
+
+
         
         # State
         self.completion_tracker = FieldCompletenessTracker()
+        self.case_facts = CaseFactsSchema() 
         self.complete = False
         self.message_count = 0
         self.message_limit = 50
@@ -54,24 +62,24 @@ class ChatOrchestrator:
     def _generate_response(self, user_input: str, intent: str, mode: str) -> str:
         """Route to appropriate response generator"""
         
+        print("Running command for", mode)
+
         history = self.memory.get_short_term_history()
         
         if mode == "listen":
-            return self.responder.listen(user_input, intent, history)
+            return self.responder.listen(user_input=user_input, intent=intent, history=history, completion_tracker=self.completion_tracker)
         
         elif mode == "educate":
-            return self.responder.educate(user_input, history)
+            return self.responder.educate(user_input=user_input, history=history, intent=intent, completion_tracker=self.completion_tracker)
         
         elif mode == "guide":
             return self.responder.guide(
-                user_input, 
-                intent, 
-                self.completion_tracker, 
-                history
+                user_input=user_input, 
+                intent=intent, 
+                completion_tracker=self.completion_tracker, 
+                history=history
             )
-        
-        elif mode == "act":
-            return self.responder.act()
+    
         
         else:
             return self.responder.listen(user_input, intent, history)
@@ -79,8 +87,8 @@ class ChatOrchestrator:
     def _check_completion(self):
         """Check if conversation should end"""
         
-        self.completion_tracker = self.analyser.analyse_completion(
-            self.memory.short_term_memory.messages
+        self.completion_tracker, self.case_facts = self.analyser.analyse_completion(
+            self.memory.short_term_memory.messages, self.case_facts
         )
         
         # Exit conditions

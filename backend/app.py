@@ -1,57 +1,76 @@
+from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
+import secrets
+
 from orchestrator.main_orchestration import ChatOrchestrator
 from langchain_openai import ChatOpenAI
 from embedding_pipeline.embedder import Embedder
 from orchestrator.prompts import EQUALISER_SYSTEM_PROMPT
-from flask import Flask, request, jsonify
-import secrets
-from flask_cors import CORS
 
-app = Flask(__name__)
-CORS(app) 
+app = FastAPI()
 
-sessions = {}
+# CORS
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:5173"],  # tighten in production
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# In-memory session store
+sessions: dict[str, ChatOrchestrator] = {}
 
 
-def create_chat_session():
+
+class SessionResponse(BaseModel):
+    session_id: str
+
+
+class ChatRequest(BaseModel):
+    session_id: str
+    message: str
+
+
+class ChatResponse(BaseModel):
+    ai_message: str
+    complete: bool
+
+
+
+def create_chat_session() -> ChatOrchestrator:
     llm = ChatOpenAI(model="gpt-4o-mini-2024-07-18")
-    assistant_llm = ChatOpenAI(model="gpt-4o-mini-2024-07-18")  # Or keep Ollama
+    assistant_llm = ChatOpenAI(model="gpt-4o-mini-2024-07-18")
     embedder = Embedder()
 
-    client = ChatOrchestrator(
+    return ChatOrchestrator(
         llm=llm,
         assistant_llm=assistant_llm,
         embedder=embedder,
-        system_prompt=EQUALISER_SYSTEM_PROMPT
+        system_prompt=EQUALISER_SYSTEM_PROMPT,
     )
 
-@app.route("/session", methods=['post'])
-def create_session():
+
+
+@app.post("/session", response_model=SessionResponse)
+async def create_session():
     session_id = secrets.token_urlsafe(16)
     sessions[session_id] = create_chat_session()
-
-    return jsonify({
-        "session_id": session_id
-    })
+    return {"session_id": session_id}
 
 
-@app.route("/chat", methods=["POST"])
-def chat():
-    data = request.json
-    session_id = data.get("session_id")
-    user_message = data.get("message")
+@app.post("/chat", response_model=ChatResponse)
+async def chat(request: ChatRequest):
+    client = sessions.get(request.session_id)
 
-    if session_id not in sessions:
-        return jsonify({"error": "Invalid session"}), 400
+    if not client:
+        raise HTTPException(status_code=400, detail="Invalid session")
 
-    client = sessions[session_id]
+    # orchestrate is sync → safe to call directly
+    ai_message = client.orchestrate(request.message)
 
-    ai_message = client.orchestrate(user_message)
-
-    return jsonify({
+    return {
         "ai_message": ai_message,
-        "complete": client.complete
-    })
-
-
-if __name__ == "__main__":
-    app.run(debug=True)
+        "complete": client.complete,
+    }

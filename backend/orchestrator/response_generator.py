@@ -1,6 +1,8 @@
 from langchain.prompts import ChatPromptTemplate, MessagesPlaceholder, PromptTemplate
 from langchain_core.output_parsers import PydanticOutputParser
-from .schemas import QuestionSchema
+from .schemas import QuestionSchema, FieldCompletenessTracker
+from langchain_core.output_parsers import StrOutputParser
+
 
 class ResponseGenerator:
     """Generates responses based on mode"""
@@ -12,27 +14,40 @@ class ResponseGenerator:
         
         self.chat_template = ChatPromptTemplate.from_messages([
             ("system", system_prompt),
+
             MessagesPlaceholder(variable_name="history"),
+
+            ("system",
+             
+            "Please generate a natural empathic response that guides the you and the user to a better understanding of their situation"
+
+            
+            "Current user intent: {intent}\n"
+            "User sentiment: {sentiment}\n"
+            "Retrieved Facts: {context}"
+            "Missing case facts:\n {missing}"
+            ),
+
             ("human", "{input}")
         ])
     
-    def listen(self, user_input: str, intent: str, history) -> str:
+    def listen(self, user_input: str, intent: str, history, completion_tracker: FieldCompletenessTracker, context = None) -> str:
         """Standard empathetic chat response"""
         
         chain = self.chat_template | self.llm
-        
         response = chain.invoke({
-            "history": history.messages,
-            "input": f"""Respond empathetically with natural language, then ask a follow-up question.
+                "history": history.messages,        # List[BaseMessage]
+                "intent": intent,
+                "context": context,
+                "sentiment": completion_tracker.user_emotions,
+                "input": user_input,
+                "missing": completion_tracker.missing_critical_fields
+            })
             
-            User Intent: {intent}
-            User Input: {user_input}
-            """
-        })
         
         return response.content
     
-    def educate(self, user_input: str, history) -> str:
+    def educate(self, user_input: str, intent: str, history, completion_tracker=None) -> str:
         """Provide factual legal information with RAG"""
         
         if not self.rag_handler:
@@ -41,18 +56,11 @@ class ResponseGenerator:
         # Retrieve relevant context
         context = self.rag_handler.retrieve(user_input)
         
-        response = self.llm.invoke(f"""
-        Using this legal context, answer the user's question factually:
+        response = self.listen(user_input, intent, history, context=context, completion_tracker=completion_tracker)
         
-        Context: {context}
-        User Question: {user_input}
-        
-        Respond conversationally but accurately. Cite sources where relevant.
-        """)
-        
-        return response.content
+        return response
     
-    def guide(self, user_input: str, intent: str, completion_tracker, history) -> str:
+    def guide(self, user_input: str, intent: str, completion_tracker: FieldCompletenessTracker, history) -> str:
         """Generate multiple choice questions"""
         
         parser = PydanticOutputParser(pydantic_object=QuestionSchema)
@@ -87,8 +95,7 @@ class ResponseGenerator:
         for i, q in enumerate(result.questions, 1):
             questions_text += f"{i}. {q}\n"
         
+        
+
         return questions_text
     
-    def act(self) -> str:
-        """Completion/exit message"""
-        return "Based on what you've shared, I have enough information to connect you with the right help. Would you like to proceed?"

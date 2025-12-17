@@ -3,7 +3,7 @@ from langchain_core.chat_history import InMemoryChatMessageHistory
 class MemoryManager:
     """Manages all conversation memory"""
     
-    def __init__(self, llm, condense_threshold=12):
+    def __init__(self, llm, condense_threshold=3):
         self.llm = llm
         self.condense_threshold = condense_threshold
         
@@ -33,11 +33,85 @@ class MemoryManager:
     
     def _condense_history(self):
         """Condense history to reduce tokens"""
+
+        essential_fields = [
+                # Matter Identification
+                "matter_type",
+                "matter_subtype",
+                "brief_description",
+                
+                # Parties
+                "client_name",
+                "other_parties",
+                "children_involved",
+                "children_details",
+                
+                # Timeline
+                "incident_start_date",
+                "key_events",
+                "upcoming_deadlines",
+                "statute_of_limitations_concern",
+                
+                # Legal Status
+                "current_legal_proceedings",
+                "court_orders_in_place",
+                "previous_legal_action",
+                "represented_by_lawyer",
+                
+                # Financial
+                "estimated_claim_value",
+                "property_assets",
+                "financial_accounts",
+                "debts_liabilities",
+                "client_employment_status",
+                "client_annual_income",
+                "ability_to_pay_legal_fees",
+                
+                # Risk Factors
+                "domestic_violence_present",
+                "immediate_safety_risk",
+                "risk_of_asset_dissipation",
+                "mental_health_concerns",
+                "substance_abuse_issues",
+                "risk_details",
+                
+                # Evidence
+                "documentation_available",
+                "witnesses_available",
+                "evidence_quality",
+                
+                # Client Goals
+                "desired_outcome",
+                "primary_concerns",
+                "deal_breakers",
+                "willingness_to_negotiate",
+                
+                # Jurisdiction
+                "state_territory",
+                "matter_location",
+                "interstate_elements",
+                
+                # Urgency
+                "urgency_level",
+                "urgency_reason",
+                
+                # Additional Context
+                "cultural_considerations",
+                "disability_accessibility_needs",
+                "preferred_contact_method",
+                "additional_notes",
+                
+                # Meta
+                "facts_last_updated",
+                "confidence_score",
+                "critical_gaps"
+            ]
         
         condensed_text = self.llm.invoke(f"""
-        Condense this message history. Keep essential facts, remove redundancy:
+        Condense this message history. 
+        Keep all facts relating to the following {essential_fields}
         
-        {self.short_term_memory.messages}
+        Message History: {self.short_term_memory.messages}
         """)
         
         new_history = InMemoryChatMessageHistory()
@@ -48,4 +122,7 @@ class MemoryManager:
             new_history.messages.append(msg)
         
         self.short_term_memory = new_history
+
+        print(new_history)
+
         return new_history
