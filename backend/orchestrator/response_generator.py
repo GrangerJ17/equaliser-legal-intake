@@ -1,4 +1,4 @@
-from langchain.prompts import ChatPromptTemplate, MessagesPlaceholder, PromptTemplate
+from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder, PromptTemplate
 from langchain_core.output_parsers import PydanticOutputParser
 from .schemas import QuestionSchema, FieldCompletenessTracker
 from langchain_core.output_parsers import StrOutputParser

@@ -11,7 +11,7 @@ import secrets
 store = {}
 
 
-# for testing in CLI
+# for testing 
 
 def main():
 
@@ -50,8 +50,7 @@ def main():
 
         except Exception as e:
             print("Error: ", e)
-
-    
+ 
             
 if __name__ == "__main__":
     import sys
