@@ -1,5 +1,5 @@
 from typing import List
-
+import json
 
 from langchain_core.output_parsers import PydanticOutputParser
 
@@ -11,6 +11,7 @@ from langchain_core.prompts import SystemMessagePromptTemplate, ChatPromptTempla
 from langchain_openai import ChatOpenAI
 import sys
 import os
+from report import generate_report
 
 # Add project root to sys.path
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -23,335 +24,234 @@ from skeleton_gen import design_report_skeleton
 
 
 MOCK_CONVERSATION = [
-    # ============ OPENING - DISTRESS SIGNAL ============
+    # ============ OPENING ============
     {
         "role": "assistant",
         "content": "Hello, I'm Equaliser. I'm here to help understand your legal situation. What brings you here today?"
     },
     {
         "role": "user",
-        "content": "My husband left three weeks ago and took our kids. I don't know where they are and I'm terrified."
+        "content": "My husband moved out a few weeks ago and now he's saying the house is his and that I might have to leave. I'm really stressed and don't know what my rights are."
     },
-    # TESTS: 
-    # - Sentiment: fear (high intensity ~0.9)
-    # - Intent: asking_for_help
-    # - Risk: immediate_safety_risk, children_involved
-    # - Urgency: crisis
-    
-    # ============ EMPATHY + SAFETY CHECK ============
-    {
-        "role": "assistant",
-        "content": "I'm so sorry you're going through this. That sounds incredibly frightening. First, are you and the children safe right now? Is there any immediate danger?"
-    },
-    {
-        "role": "user",
-        "content": "I'm safe, but I don't know about the kids. He has a history of anger issues but never physically hurt them. I'm just so worried."
-    },
-
     # TESTS:
-    # - Risk: domestic_violence_present (emotional), mental_health_concerns
-    # - Sentiment: fear, sadness (0.8)
-    # - Evidence: witness to behavior patterns
+    # - Sentiment: stress, anxiety (~0.7)
+    # - Intent: asking_for_help
+    # - Matter: property / family law
+    # - Urgency: moderate
     
-    # ============ MATTER TYPE IDENTIFICATION ============
+    # ============ EMPATHY ============
     {
         "role": "assistant",
-        "content": "I understand. Let me help you get connected with someone who can assist. Can you tell me - are you and your husband separated, or is this the first time he's left?"
+        "content": "I'm sorry you're dealing with this. Disputes about the family home can be very stressful. I’ll ask you some questions so I can point you in the right direction."
     },
     {
         "role": "user",
-        "content": "We've been having problems for months but this is the first time he's actually left. We're not legally separated or anything. We've been married 8 years."
+        "content": "Thank you. I just feel overwhelmed."
     },
 
+    # ============ RELATIONSHIP STATUS ============
+    {
+        "role": "assistant",
+        "content": "Can you tell me a bit about your relationship status? Are you separated, and how long were you together?"
+    },
+    {
+        "role": "user",
+        "content": "We're separated but not legally divorced. We were married for 8 years before he moved out."
+    },
     # TESTS:
     # - matter_type: family_law
-    # - matter_subtype: separation, custody
-    # - incident_start_date: ~3 weeks ago
+    # - matter_subtype: separation, property settlement
     # - relationship_duration: 8 years
-    
-    # ============ CHILDREN DETAILS ============
-    {
-        "role": "assistant",
-        "content": "Thank you for sharing that. Can you tell me about your children - how many and what ages?"
-    },
-    {
-        "role": "user",
-        "content": "Two daughters - Emma is 6 and Sophie is 4. They should be in school but I don't even know if he's taking them."
-    },
-    # TESTS:
-    # - children_involved: True
-    # - children_details: [{name: Emma, age: 6}, {name: Sophie, age: 4}]
-    # - urgency: education disruption
     
     # ============ TIMELINE ============
     {
         "role": "assistant",
-        "content": "I can understand why you're so worried. When exactly did he leave with the girls?"
+        "content": "When did he move out of the home?"
     },
     {
         "role": "user",
-        "content": "November 28th. He picked them up from school and never brought them back. I've tried calling but he won't answer."
+        "content": "About three weeks ago."
     },
     # TESTS:
-    # - key_events: [{date: "2024-11-28", event: "father took children from school"}]
-    # - communication_breakdown: no contact
-    # - upcoming_deadlines: potential for urgent parenting order
+    # - incident_start_date: ~3 weeks ago
+    # - separation_recent: True
     
-    # ============ LEGAL STATUS CHECK ============
+    # ============ PROPERTY OWNERSHIP ============
     {
         "role": "assistant",
-        "content": "Have you been to the police or court about this? Are there any existing court orders about custody or parenting arrangements?"
+        "content": "Do you and your husband own the home together?"
     },
     {
         "role": "user",
-        "content": "No, nothing. I called the police but they said it's a 'civil matter' because he's their father. There's no court orders or anything like that."
+        "content": "Yes, we bought it together five years ago. Both our names are on the title."
+    },
+    # TESTS:
+    # - property_assets: joint ownership
+    # - key_issue: family home
+    
+    # ============ PROPERTY VALUE ============
+    {
+        "role": "assistant",
+        "content": "Do you know roughly what the property is worth and how much is left on the mortgage?"
+    },
+    {
+        "role": "user",
+        "content": "It's probably worth around $850,000 and we owe about $520,000 on the mortgage."
+    },
+    # TESTS:
+    # - property_value: $850,000
+    # - mortgage_balance: $520,000
+    # - net_equity: ~$330,000
+    
+    # ============ CURRENT LIVING ARRANGEMENTS ============
+    {
+        "role": "assistant",
+        "content": "Are you currently living in the home?"
+    },
+    {
+        "role": "user",
+        "content": "Yes, I’m still living there. He’s staying with a friend but keeps saying I won’t be able to afford the house and that I’ll have to sell."
+    },
+    # TESTS:
+    # - occupation_status: client in home
+    # - dispute: forced sale threat
+    
+    # ============ LEGAL ACTION ============
+    {
+        "role": "assistant",
+        "content": "Have either of you started any legal process yet, like a property settlement or mediation?"
+    },
+    {
+        "role": "user",
+        "content": "No, nothing formal. He just keeps sending messages saying the house should be sold and that he wants his share."
     },
     # TESTS:
     # - current_legal_proceedings: False
-    # - court_orders_in_place: []
-    # - previous_legal_action: police report filed (no action)
-    # - represented_by_lawyer: False
+    # - negotiation_attempts: informal only
     
     # ============ LOCATION ============
     {
         "role": "assistant",
-        "content": "Where are you located? This helps me connect you with the right local support."
+        "content": "Where are you located?"
     },
     {
         "role": "user",
-        "content": "We're in Sydney, Parramatta area. That's where the kids' school is too."
+        "content": "Sydney, around Parramatta."
     },
     # TESTS:
-    # - state_territory: NSW
-    # - matter_location: Parramatta, Sydney
-    # - interstate_elements: False (so far)
+    # - jurisdiction: NSW
+    # - court: Federal Circuit and Family Court (implied)
     
     # ============ DESIRED OUTCOME ============
     {
         "role": "assistant",
-        "content": "What would you most want to happen right now? What's your main priority?"
+        "content": "What would you ideally like to happen with the house?"
     },
     {
         "role": "user",
-        "content": "I just want my girls back. I want them home where they're safe. I don't even care about the house or money, I just want to know they're okay and that I can see them."
+        "content": "I want to stay in the home if possible, or at least not be forced out before things are sorted properly."
     },
     # TESTS:
-    # - desired_outcome: primary custody of children
-    # - primary_concerns: child safety, wellbeing
-    # - deal_breakers: must have access to children
-    # - Intent: ready_to_proceed (high buying_readiness)
-    # - Sentiment: determined (0.7), fear (0.6)
+    # - desired_outcome: retain home / fair settlement
+    # - deal_breakers: housing stability
     
-    # ============ FINANCIAL SITUATION - ASSETS ============
+    # ============ EMPLOYMENT & INCOME ============
     {
         "role": "assistant",
-        "content": "I understand. To find the right help, I need to understand your situation a bit better. Do you and your husband own your home?"
+        "content": "Are you currently working, and do you know roughly what your husband earns?"
     },
     {
         "role": "user",
-        "content": "Yes, we bought it 5 years ago. It's worth about $850,000 now but we still owe $520,000 on the mortgage. Both our names are on it."
+        "content": "I work part-time as a teacher’s aide earning about $35,000 a year. He’s a tradesman and earns about $85,000."
     },
     # TESTS:
-    # - property_assets: [{type: "family_home", value: "$850,000", ownership: "joint", debt: "$520,000"}]
-    # - estimated_claim_value: Net equity ~$330,000
-    # - debts_liabilities: [{type: "mortgage", amount: "$520,000", shared: True}]
-    
-    # ============ FINANCIAL - EMPLOYMENT & INCOME ============
-    {
-        "role": "assistant",
-        "content": "Are you currently working?"
-    },
-    {
-        "role": "user",
-        "content": "I work part-time as a teacher's aide, about $35,000 a year. My husband is a tradesman, he makes about $85,000. But I don't know if he's still working or what's happening with money."
-    },
-    # TESTS:
-    # - client_employment_status: employed_part_time
-    # - client_annual_income: "$35,000"
-    # - other_party_income: "$85,000"
-    # - financial_accounts: unclear (red flag - no access)
-    # - risk_of_asset_dissipation: possible
+    # - income_disparity: True
+    # - relevance: borrowing capacity, settlement split
     
     # ============ OTHER ASSETS ============
     {
         "role": "assistant",
-        "content": "Do you have any savings, superannuation, or other assets like cars?"
+        "content": "Are there any other significant assets or debts I should be aware of?"
     },
     {
         "role": "user",
-        "content": "We have about $12,000 in a joint savings account, but I don't know if he's touched it. He has his work ute that's paid off, probably worth $30,000. We each have our super - mine's about $45,000, his is probably $120,000 or so. That's about it."
+        "content": "We have about $12,000 in joint savings, superannuation for both of us, and a credit card with around $8,000 owing."
     },
     # TESTS:
-    # - financial_accounts: [
-    #     {type: "joint_savings", value: "$12,000", access: "uncertain"},
-    #     {type: "superannuation_client", value: "$45,000"},
-    #     {type: "superannuation_spouse", value: "$120,000"}
-    #   ]
-    # - property_assets: [{type: "vehicle", value: "$30,000", ownership: "husband"}]
-    # - Total asset pool: ~$550k equity + assets - debts
+    # - asset_pool: moderate
+    # - shared_debts: True
     
-    # ============ OTHER DEBTS ============
+    # ============ COST CONCERNS ============
     {
         "role": "assistant",
-        "content": "Do you have any other debts - credit cards, car loans, anything like that?"
+        "content": "Are you concerned about the cost of getting legal help?"
     },
     {
         "role": "user",
-        "content": "Just a credit card with about $8,000 on it. Both our names but I think he's been using it. I'm worried about that too."
+        "content": "Yes, very. I don’t have much savings and I can’t afford expensive legal fees."
     },
     # TESTS:
-    # - debts_liabilities: [{type: "credit_card", amount: "$8,000", shared: True}]
-    # - risk_of_asset_dissipation: increasing concern
+    # - cost_barrier: True
+    # - funding_needed: likely
     
-    # ============ ABILITY TO PAY ============
+    # ============ REASSURANCE ============
     {
         "role": "assistant",
-        "content": "I need to ask about legal costs. Are you able to afford lawyer fees, or would you need help with funding?"
+        "content": "That’s completely understandable. There are options like legal aid, fixed-fee advice, or payment plans. Getting advice early can actually save money in the long run."
     },
     {
         "role": "user",
-        "content": "I don't have much money. Maybe a couple thousand. I definitely can't afford big legal bills. Do I qualify for legal aid or something?"
+        "content": "That makes me feel a bit better."
     },
     # TESTS:
-    # - ability_to_pay_legal_fees: need_funding
-    # - Legal aid eligibility: likely (income <$45k, DV elements, children)
-    # - Intent: still engaged but cost_concern barrier detected
-    
-    # ============ HESITATION - BARRIER ADDRESSED ============
-    {
-        "role": "assistant",
-        "content": "That's a very common concern. There are funding options including legal aid, and payment plans. Cost shouldn't stop you from getting help, especially with children involved. Let's focus on your situation first, and we can work out funding that fits your circumstances."
-    },
-    {
-        "role": "user",
-        "content": "Okay, that's a relief. I was worried I couldn't afford to do anything."
-    },
-    # TESTS:
-    # - Hesitation detected → barrier addressed → engagement restored
-    # - Intent: back to ready_to_proceed
-    # - Sentiment: relief (0.4), hope emerging
-    
-    # ============ RISK ASSESSMENT - DV DETAILS ============
-    {
-        "role": "assistant",
-        "content": "You mentioned your husband has anger issues. Has there been any violence or threats in the relationship?"
-    },
-    {
-        "role": "user",
-        "content": "He's never hit me, but he's punched walls, thrown things. He screams at me in front of the kids. A few weeks before he left he said he'd 'make sure I never see the girls again' during an argument. That's why I'm so scared now."
-    },
-    # TESTS:
-    # - domestic_violence_present: True (emotional, intimidation)
-    # - immediate_safety_risk: moderate (threats made)
-    # - risk_details: property damage, verbal abuse, threats re: children
-    # - documentation_available: potential evidence (property damage photos?)
-    # - Impact on urgency_level: crisis
-    
-    # ============ EVIDENCE CHECK ============
-    {
-        "role": "assistant",
-        "content": "Do you have any evidence of this - text messages, photos, anyone who witnessed these incidents?"
-    },
-    {
-        "role": "user",
-        "content": "I have text messages where he's been really aggressive. And my sister has seen him yell at me before. I took a photo of the hole he punched in the wall last month."
-    },
-    # TESTS:
-    # - documentation_available: ["text_messages", "photos"]
-    # - witnesses_available: True (sister)
-    # - evidence_quality: moderate
-    
-    # ============ SUBSTANCE ABUSE CHECK ============
-    {
-        "role": "assistant",
-        "content": "Is there any drug or alcohol use that's relevant to the situation?"
-    },
-    {
-        "role": "user",
-        "content": "He drinks a lot, especially on weekends. Not every day but when he does he can get really angry. I don't think he does drugs but I'm not 100% sure."
-    },
-    # TESTS:
-    # - substance_abuse_issues: True (alcohol)
-    # - Impact on case strength: relevant to parenting capacity
-    # - Evidence: potentially observable, witness testimony
-    
-    # ============ MENTAL HEALTH ============
-    {
-        "role": "assistant",
-        "content": "How are you coping with all this? Are you getting any support?"
-    },
-    {
-        "role": "user",
-        "content": "I'm barely sleeping. I've been to my GP and she gave me something for anxiety. My sister has been helping but I'm struggling. I just need my kids back."
-    },
-    # TESTS:
-    # - mental_health_concerns: True (client - anxiety from trauma)
-    # - Support network: sister
-    # - Sentiment: distress (0.8), exhaustion
-    # - Medical documentation: GP records (evidence of impact)
+    # - hesitation addressed
+    # - engagement maintained
     
     # ============ WILLINGNESS TO NEGOTIATE ============
     {
         "role": "assistant",
-        "content": "If you could talk to your husband safely, would you be willing to work out an agreement, or do you think this needs to go to court?"
+        "content": "Would you be open to negotiating a property settlement, or do you think this may need to go to court?"
     },
     {
         "role": "user",
-        "content": "I'd try to work something out if he'd actually talk to me, but he won't answer my calls. If that's what it takes to get my girls back, I'll go to court. I'll do whatever I have to."
+        "content": "I’d prefer to negotiate, but I want to understand my rights first. I don’t want to agree to something unfair."
     },
     # TESTS:
-    # - willingness_to_negotiate: willing_to_negotiate (preferred) but prepared_for_court
-    # - Communication status: broken down
-    # - Intent: ready_to_proceed (very high buying_readiness ~0.9)
-    # - Sentiment: determined (0.8)
-    
-    # ============ CULTURAL/ACCESSIBILITY ============
-    {
-        "role": "assistant",
-        "content": "Is there anything else I should know - any cultural considerations, language needs, or accessibility requirements?"
-    },
-    {
-        "role": "user",
-        "content": "No, we're both Australian. English is fine. I just need help as soon as possible."
-    },
-    # TESTS:
-    # - cultural_considerations: None
-    # - disability_accessibility_needs: None
-    # - preferred_contact_method: phone (implied urgency)
+    # - willingness_to_negotiate: True
+    # - intent: advice-seeking, not avoidance
     
     # ============ COMPLETION OFFER ============
     {
         "role": "assistant",
-        "content": "Thank you for sharing all of this with me. I know that wasn't easy. I have enough information to connect you with a family lawyer who specializes in urgent parenting matters and has experience with domestic violence cases. They can help you get an urgent court application to see your daughters. Would you like me to proceed with that?"
+        "content": "Thank you for explaining everything. I have enough information to connect you with a family lawyer who specialises in property settlements. They can explain your rights regarding the home and help protect your position. Would you like me to proceed with that?"
     },
     {
         "role": "user",
-        "content": "Yes, please. How soon can someone help me?"
+        "content": "Yes, please. I’d really appreciate that."
     },
     # TESTS:
-    # - Completion check: ready_to_exit = True
-    # - User confirmation: explicit "yes"
-    # - Intent: ready_to_hire
-    # - Engagement: high throughout
+    # - ready_to_proceed: True
     
     # ============ FINAL HANDOFF ============
     {
         "role": "assistant",
-        "content": "I'm connecting you with a specialist now. Based on your situation, this is what will happen next:\n\n1. A family lawyer experienced in urgent parenting matters will contact you within 2 hours\n2. They'll help you file for urgent court orders to locate the children and establish interim custody\n3. We'll connect you with legal aid funding given your circumstances\n4. Given the DV elements, they'll also help with safety planning\n\nYour reference number is: EQ-2847. Someone will call you shortly. Is the best number to reach you on [your number]?"
+        "content": "Great. Here’s what will happen next:\n\n1. A family lawyer experienced in property and separation matters will contact you\n2. They’ll explain your legal rights to the home and next steps\n3. We’ll discuss cost options that suit your situation\n\nYour reference number is EQ-3912. Is the best number to reach you your mobile?"
     },
     {
         "role": "user",
-        "content": "Yes, that's my mobile. Thank you so much."
+        "content": "Yes, that’s fine. Thank you for your help."
     },
     # TESTS:
     # - Complete: True
-    # - Lead quality score: 95/100 (high urgency, clear need, strong case)
-    # - Handoff successful with clear next steps
+    # - Lead quality: high (clear issue, assets involved, ready to proceed)
 ]
+
 
 llm = ChatOpenAI(model="gpt-4o-mini-2024-07-18")
 
 async def main():
-   pass 
+   skeleton = await asyncio.create_task(design_report_skeleton(MOCK_CONVERSATION, llm))
+   
+   report = await asyncio.create_task(generate_report(MOCK_CONVERSATION, skeleton, llm))
 
 asyncio.run(main())

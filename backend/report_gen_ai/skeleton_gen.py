@@ -103,7 +103,7 @@ async def design_report_skeleton(serialized_conversation: str, llm: ChatOpenAI |
     output_parser = PydanticOutputParser(pydantic_object=ReportSkeleton)
     format_instructions = output_parser.get_format_instructions()
 
-    prompt =  prompt = ChatPromptTemplate(
+    prompt = ChatPromptTemplate(
         messages=[
             SystemMessagePromptTemplate.from_template(SYSTEM_PROMPT),
             HumanMessagePromptTemplate.from_template(
@@ -116,8 +116,9 @@ async def design_report_skeleton(serialized_conversation: str, llm: ChatOpenAI |
 
     output = await llm.ainvoke(prompt.to_messages())
 
+    parsed_output = output_parser.parse(output.content)
 
-    return output
+    return parsed_output
 
 
 
